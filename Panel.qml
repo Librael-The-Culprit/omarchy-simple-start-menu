@@ -64,7 +64,9 @@ Panel {
   readonly property string statePath: root.stateDir + "/opacity"
 
   function applyOpacity(raw) {
-    var n = Number(String(raw || "").trim())
+    var t = String(raw == null ? "" : raw).trim()
+    if (t === "") { root.cardOpacity = 1; return }
+    var n = Number(t)
     if (isFinite(n)) root.cardOpacity = Math.max(0, Math.min(1, n))
   }
 
@@ -162,6 +164,14 @@ Panel {
 
   function searching() {
     return String(root.searchText).trim().length > 0
+  }
+
+  // Focus the search field without trusting a compile-time id lookup: under a
+  // partial plugin reload the id may resolve to nothing, and a bare call would
+  // throw in the middle of an open/openSection/goBack navigation.
+  function focusSearch() {
+    var f = typeof searchField !== "undefined" ? searchField : null
+    if (f) f.forceActiveFocus()
   }
 
   function unwrap(row) {
@@ -287,7 +297,7 @@ Panel {
       var row = rows[i]
       if (!row || row._header) return
       root.activateBrowseRow(row)
-      searchField.forceActiveFocus()
+      root.focusSearch()
     }
   }
 
@@ -420,25 +430,25 @@ Panel {
       root.currentId = "root"
       root.browseCursor = 0
       root.rebuildBrowse()
-      searchField.forceActiveFocus()
+      root.focusSearch()
       return
     }
-    root.stack.push(id)
+    root.stack = root.stack.concat([id])
     root.currentId = id
     root.browseCursor = 0
     var entry = root.menuItems[id]
     if (entry && entry.provider && !root.providerRows[id]) root.runProvider(id)
     root.rebuildBrowse()
-    searchField.forceActiveFocus()
+    root.focusSearch()
   }
 
   function goBack() {
     if (root.stack.length <= 1) return
-    root.stack.pop()
+    root.stack = root.stack.slice(0, root.stack.length - 1)
     root.currentId = root.stack[root.stack.length - 1]
     root.browseCursor = 0
     root.rebuildBrowse()
-    searchField.forceActiveFocus()
+    root.focusSearch()
   }
 
   function activateBrowseRow(row) {
@@ -615,7 +625,7 @@ Panel {
   }
 
   function open() {
-    if (searchField) searchField.text = ""
+    if (typeof searchField !== "undefined" && searchField) searchField.text = ""
     root.searchText = ""
     root.gridIndex = 0
     root.stack = ["root"]
@@ -673,13 +683,14 @@ Panel {
     onExited: root.applyPinned(pinnedProc.collected)
   }
 
-  Process {
-    id: opacityProc
-    command: ["bash", "-c", "test -f \"$HOME/.local/state/omarchy/startmenu/opacity\" && cat \"$HOME/.local/state/omarchy/startmenu/opacity\" || echo 1"]
-    stdout: StdioCollector {
-      waitForEnd: true
-      onStreamFinished: function(text) { root.applyOpacity(text) }
-    }
+  FileView {
+    id: opacityFile
+    path: root.statePath
+    watchChanges: true
+    printErrors: false
+    onLoaded: root.applyOpacity(text())
+    onLoadFailed: root.cardOpacity = 1
+    onFileChanged: reload()
   }
 
   Process {
@@ -710,7 +721,6 @@ Panel {
   }
 
   Component.onCompleted: {
-    opacityProc.running = true
     placesProc.running = true
     pinnedProc.running = true
     Qt.callLater(function() { root.rebuildMenu() })
@@ -756,7 +766,12 @@ Panel {
 
         Keys.priority: Keys.BeforeItem
         Keys.onPressed: function(event) {
-          if (event.key === Qt.Key_Escape) { hideCtx(); panel.close(); event.accepted = true; return }
+          if (event.key === Qt.Key_Escape) {
+            hideCtx()
+            if (root.searching()) { searchField.clear(); event.accepted = true; return }
+            if (root.stack.length > 1) { root.goBack(); event.accepted = true; return }
+            panel.close(); event.accepted = true; return
+          }
           if (event.key === Qt.Key_Return || event.key === Qt.Key_Enter) {
             root.activateTarget(); event.accepted = true; return
           }
@@ -814,30 +829,41 @@ Panel {
             Layout.fillWidth: true
             visible: !root.searching() && root.stack.length > 1
 
-            Text {
-              text: root.stack.length > 1 ? "\uf060" : ""
-              color: root.accent
-              font.family: Style.font.menuFamily
-              font.pixelSize: Style.font.caption
-              visible: root.stack.length > 1
+            MouseArea {
+              Layout.preferredHeight: Math.round(Style.spacing.controlHeight * 0.6)
+              Layout.fillWidth: true
+              enabled: root.stack.length > 1
+              cursorShape: Qt.PointingHandCursor
+              hoverEnabled: true
+              onClicked: root.goBack()
+
+              RowLayout {
+                anchors.fill: parent
+                spacing: Style.spacing.sm
+
+                Text {
+                  text: "\uf060"
+                  color: root.accent
+                  font.family: Style.font.menuFamily
+                  font.pixelSize: Style.font.caption
+                }
+
+                Text {
+                  text: root.pathLabel(root.currentId)
+                  color: root.muted
+                  font.family: Style.font.menuFamily
+                  font.pixelSize: Style.font.caption
+                  elide: Text.ElideRight
+                  Layout.fillWidth: true
+                }
+              }
             }
 
             Text {
-              text: root.pathLabel(root.currentId)
-              color: root.muted
-              font.family: Style.font.menuFamily
-              font.pixelSize: Style.font.caption
-              elide: Text.ElideRight
-            }
-
-            Item { Layout.fillWidth: true }
-
-            Text {
-              text: root.stack.length > 1 ? "Back" : ""
+              text: "Back"
               color: root.accent
               font.family: Style.font.menuFamily
               font.pixelSize: Style.font.caption
-              visible: root.stack.length > 1
               MouseArea {
                 anchors.fill: parent
                 cursorShape: Qt.PointingHandCursor
@@ -974,7 +1000,7 @@ Panel {
         hoverEnabled: true
         cursorShape: Qt.PointingHandCursor
         onClicked: {
-          searchField.forceActiveFocus()
+          root.focusSearch()
           root.openPlace(modelData.path)
         }
       }
@@ -1040,7 +1066,7 @@ Panel {
           if (mouse.button !== Qt.LeftButton) return
           root.browseCursor = index
           root.activateBrowseRow(modelData)
-          searchField.forceActiveFocus()
+          root.focusSearch()
         }
         onPressed: function(mouse) {
           if (mouse.button === Qt.RightButton) {
@@ -1124,7 +1150,7 @@ Panel {
         cursorShape: Qt.PointingHandCursor
         onClicked: function(mouse) {
           if (mouse.button !== Qt.LeftButton) return
-          searchField.forceActiveFocus()
+          root.focusSearch()
           root.gridIndex = index
           root.launchDesktop(modelData)
         }
@@ -1187,7 +1213,7 @@ Panel {
         hoverEnabled: true
         cursorShape: Qt.PointingHandCursor
         onClicked: {
-          searchField.forceActiveFocus()
+          root.focusSearch()
           root.runCommand(modelData.cmd)
         }
       }

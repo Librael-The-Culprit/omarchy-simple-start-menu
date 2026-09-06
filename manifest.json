@@ -2,7 +2,7 @@
     "schemaVersion": 1,
     "id": "io.github.librael-the-culprit.simple-start-menu",
     "name": "Simple Start Menu",
-    "version": "1.0.0",
+    "version": "1.1.0",
     "author": "Librael-The-Culprit",
     "license": "MIT",
     "description": "Plasma/Windows-style start menu popup anchored to the bar, with app search, pinned apps, pin/unpin on right-click, places and session controls.",
