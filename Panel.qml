@@ -35,7 +35,12 @@ Panel {
   property var pluginRegistry: null
 
   readonly property var barIdentity: hostWidget || root
-  readonly property var appLibrary: root.bar && root.bar.shell ? root.bar.shell.appLibrary : null
+
+  LocalAppLibrary {
+    id: appLibraryFallback
+  }
+
+  readonly property var appLibrary: root.bar && root.bar.shell && root.bar.shell.appLibrary ? root.bar.shell.appLibrary : appLibraryFallback
 
   property string menuDefaultPath: "/usr/share/omarchy/default/omarchy/omarchy-menu.jsonc"
   property string menuUserPath: (Quickshell.env("HOME") || "") + "/.config/omarchy/extensions/omarchy-menu.jsonc"
