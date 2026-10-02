@@ -463,6 +463,10 @@ Panel {
       root.launchAppId(row.appId)
       return
     }
+    if (row.kind === "app") {
+      root.launchAppId(row.appId)
+      return
+    }
     if (row.kind === "action") {
       if (row.action) root.runCommand(row.action)
       return
